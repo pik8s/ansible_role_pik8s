@@ -1,0 +1,57 @@
+---
+- name: set hostname in /etc/hosts
+  lineinfile:
+    dest: /etc/hosts
+    regexp: ".*{{ item }}$"
+    line: "{{ hostvars[item].ansible_default_ipv4.address }} {{ hostvars[item].ansible_fqdn }} {{ hostvars[item].ansible_hostname }}"
+    state: present
+    backup: true
+  when: hostvars[item].ansible_default_ipv4.address is defined
+  with_items: "{{ groups['all'] }}"
+
+- name: enabling cgroup options
+  lineinfile:
+    path: /boot/cmdline.txt
+    line: 'dwc_otg.lpm_enable=0 console=serial0,115200 console=tty1 root=/dev/mmcblk0p2 rootfstype=ext4 elevator=deadline fsck.repair=yes rootwait cgroup_enable=cpuset cgroup_memory=1 cgroup_enable=memory'
+    state: present
+    create: true
+    owner: root
+    group: root
+    mode: 0755
+  register: pik8s_cmdline
+
+- name: set hostnamectl
+  hostname:
+    name: "{{ inventory_hostname }}"
+  register: pik8s_hostnamectl
+
+- name: enable aarch64+ on rpi 4
+  lineinfile:
+    path: /boot/config.txt
+    state: present
+    insertafter: '^[pi4]'
+    line: amd_64=1
+  register: pik8s_rpi4_64bit
+
+- name: remove dphys-swapfile
+  apt:
+    name: dphys-swapfile
+    state: absent
+    purge: yes
+    force: yes
+  register: pik8s_swap
+
+- name: set timezone to UTC
+  timezone:
+    name: UTC
+  register: pik8s_timezone
+
+- name: reboot
+  reboot:
+    reboot_timeout: 120
+  when: |
+      pik8s_cmdline.changed or
+      pik8s_hostnamectl.changed or
+      pik8s_rpi4_64bit.changed or
+      pik8s_swap.changed or
+      pik8s_timezone.changed

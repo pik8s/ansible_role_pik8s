@@ -1,0 +1,65 @@
+---
+# start master initalization
+- name: get kubeadm verison
+  shell: kubeadm version -o yaml | grep gitVersion | awk '{ print $2 }'
+  register: pik8s_kubeadm_init_version
+  changed_when: false
+
+- name: "Initialize Master - {{ pik8s_kubeadm_init_version.stdout }}"
+  command: kubeadm init \
+           --apiserver-advertise-address={{ ansible_default_ipv4.address }} \
+           --kubernetes-version={{ pik8s_kubeadm_init_version.stdout }} \
+           --pod-network-cidr=10.244.0.0/16
+  args:
+    creates: /etc/kubernetes/manifests/kube-apiserver.yaml
+# The 'creates' arg does not accept a list; these file(s) are what kubeadm is  checking for
+#    - /etc/kubernetes/manifests/etcd.yaml
+#    - /etc/kubernetes/manifests/kube-apiserver.yaml
+#    - /etc/kubernetes/manifests/kube-controller-manager.yaml
+#    - /etc/kubernetes/manifests/kube-scheduler.yaml
+
+- name: create .kube directories
+  file:
+    path: /home/pi/.kube
+    state: directory
+    owner: pi
+    group: pi
+    mode: 0755
+
+- name: link admin.conf to .kube/config
+  file:
+    src: /etc/kubernetes/admin.conf
+    dest: /home/pi/.kube/config
+    state: link
+    owner: pi
+    group: pi
+
+- name: install flannel
+  become: false
+  command: kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+  args:
+    warn: false
+  register: pik8s_deploy_flannel
+  changed_when: |
+    pik8s_deploy_flannel.stdout == 'clusterrole.rbac.authorization.k8s.io/flannel changed' or
+    pik8s_deploy_flannel.stdout == 'clusterrolebinding.rbac.authorization.k8s.io/flannel changed' or
+    pik8s_deploy_flannel.stdout == 'serviceaccount/flannel changed' or
+    pik8s_deploy_flannel.stdout == 'configmap/kube-flannel-cfg changed' or
+    pik8s_deploy_flannel.stdout == 'daemonset.apps/kube-flannel-ds-arm64 changed' or
+    pik8s_deploy_flannel.stdout == 'daemonset.apps/kube-flannel-ds-arm changed'
+
+
+- name: get join command
+  command: kubeadm token create --print-join-command
+  changed_when: false
+  when: pik8s_cluster_role == 'master'
+  register: kubernetes_join_command_result
+  tags:
+    - always
+
+- name: set join command to all machines
+  set_fact:
+    kubernetes_join_command: "{{ kubernetes_join_command_result.stdout }}"
+  delegate_to: "{{ item }}"
+  delegate_facts: true
+  with_items: "{{ groups['all'] }}"

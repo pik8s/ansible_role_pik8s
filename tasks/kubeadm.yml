@@ -1,0 +1,69 @@
+---
+# https://docs.docker.com/engine/installation/linux/docker-ce/debian/#install-using-the-convenience-script
+- name: install docker ce v{{ pik8s_docker_ce_version }}
+  environment:
+    APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE: 1
+  script: "get-docker.sh {{ pik8s_docker_ce_version }}"
+  args:
+    creates: /usr/bin/docker
+
+- name: pin docker ce v{{ pik8s_docker_ce_version }}
+  blockinfile:
+    path: /etc/apt/preferences.d/docker
+    state: present
+    create: true
+    block: |
+          Package: docker
+          Pin: version {{ pik8s_docker_ce_version }}.*
+          Pin-Priority: 1000
+
+# Doc: https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/#letting-iptables-see-bridged-traffic
+- name: let iptables see bridged traffic
+  sysctl:
+    name: net.ipv4.ip_forward
+    value: '1'
+    sysctl_set: yes
+    state: present
+    sysctl_file: /etc/sysctl.d/k8s.conf
+    reload: yes
+  loop:
+  - net.bridge.bridge-nf-call-ip6tables
+  - net.bridge.bridge-nf-call-iptables
+
+- name: add google apt key
+  apt_key:
+    url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+    state: present
+
+- name: add kubernetes repository
+  apt_repository:
+    repo: "deb http://apt.kubernetes.io/ kubernetes-xenial main"
+    state: present
+    update_cache: true
+
+- name: pin kubernetes v"{{ pik8s_kubernetes_version }}"
+  blockinfile:
+    path: /etc/apt/preferences.d/kubernetes
+    state: present
+    create: true
+    block: |
+      Package: kubectl
+      Pin: version {{ pik8s_kubernetes_version }}.*
+      Pin-Priority: 1000
+
+      Package: kubeadm
+      Pin: version {{ pik8s_kubernetes_version }}.*
+      Pin-Priority: 1000
+
+      Package: kubelet
+      Pin: version {{ pik8s_kubernetes_version }}.*
+      Pin-Priority: 1000
+
+- name: install kubernetes v{{ pik8s_kubernetes_version }}
+  apt:
+    name: [
+           'kubelet',
+           'kubeadm',
+           'kubectl'
+          ]
+    state: present

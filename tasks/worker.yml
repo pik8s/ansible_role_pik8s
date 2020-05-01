@@ -1,0 +1,8 @@
+---
+- name: join worker machine
+  shell: "{{ kubernetes_join_command }}"
+  args:
+    creates: /etc/kubernetes/kubelet.conf
+# The 'creates' arg does not accept a list; these file(s) are what kubeadm is  checking for
+#    - /etc/kubernetes/kubelet.conf
+#    - /etc/kubernetes/pki/ca.crt
